@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 
 export default function Home() {
   const [code, setCode] = useState('')
@@ -9,9 +9,14 @@ export default function Home() {
   const [loadMsg, setLoadMsg] = useState('')
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
-  const [history, setHistory] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('va_history') || '[]') } catch { return [] }
-  })
+  const [history, setHistory] = useState([])
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('va_history') || '[]')
+      setHistory(saved)
+    } catch {}
+  }, [])
   const [page, setPage] = useState('audit')
   const [cmpA, setCmpA] = useState('')
   const [cmpB, setCmpB] = useState('')
