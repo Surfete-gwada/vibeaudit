@@ -1,5 +1,43 @@
 import { supabaseAdmin } from '../../../lib/supabase'
 
+async function checkAndUpdateUsage(userId) {
+  // Buscar o crear registro de uso
+  const { data, error } = await supabaseAdmin
+    .from('usage')
+    .select('audit_count, is_pro')
+    .eq('user_id', userId)
+    .single()
+
+  // Si no existe, crear uno nuevo
+  if (error || !data) {
+    await supabaseAdmin.from('usage').insert({ user_id: userId, audit_count: 1 })
+    return { allowed: true, count: 1, isPro: false }
+  }
+
+  // Si es pro, permitir siempre
+  if (data.is_pro) {
+    await supabaseAdmin.from('usage').update({
+      audit_count: data.audit_count + 1,
+      updated_at: new Date().toISOString()
+    }).eq('user_id', userId)
+    return { allowed: true, count: data.audit_count + 1, isPro: true }
+  }
+
+  // Si es free, comprobar límite
+  if (data.audit_count >= 3) {
+    return { allowed: false, count: data.audit_count, isPro: false }
+  }
+
+  // Incrementar contador
+  await supabaseAdmin.from('usage').update({
+    audit_count: data.audit_count + 1,
+    updated_at: new Date().toISOString()
+  }).eq('user_id', userId)
+
+  return { allowed: true, count: data.audit_count + 1, isPro: false }
+}
+
+
 const CHUNK_SIZE = 12000 // caracteres por lote
 
 function chunkCode(combinedCode) {
@@ -97,6 +135,14 @@ export async function POST(request) {
   }
 
   try {
+    // Comprobar límite de uso
+    if (userId) {
+      const usage = await checkAndUpdateUsage(userId)
+      if (!usage.allowed) {
+        return Response.json({ error: 'LIMIT_REACHED', count: usage.count }, { status: 403 })
+      }
+    }
+    
     const chunks = chunkCode(code)
     const chunkResults = []
 

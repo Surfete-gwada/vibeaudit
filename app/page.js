@@ -30,6 +30,8 @@ export default function Home() {
   const [githubUrl, setGithubUrl] = useState('')
   const [loadingGithub, setLoadingGithub] = useState(false)
   const [uploadMode, setUploadMode] = useState('text') // text | files | folder | github
+  const [showPaywall, setShowPaywall] = useState(false)
+  const [usageCount, setUsageCount] = useState(0)
   const fileRef = useRef()
   const folderRef = useRef()
   const intervalRef = useRef()
@@ -48,6 +50,10 @@ export default function Home() {
   }
 
   async function runAudit() {
+if (!user) {
+      setError('Debes iniciar sesión para auditar código.')
+      return
+    }
     setLoading(true)
     setError('')
     setResult(null)
@@ -63,8 +69,14 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code, lang, focus, userId: user?.id })
       })
-      const data = await res.json()
+const data = await res.json()
       clearInterval(intervalRef.current)
+      if (data.error === 'LIMIT_REACHED') {
+        setShowPaywall(true)
+        setUsageCount(data.count)
+        setLoading(false)
+        return
+      }
       const entry = { ...data, code: code.substring(0, 300), lang, focus, ts: Date.now(), id: Date.now() }
       saveHistory(entry)
       setResult(entry)
@@ -456,7 +468,74 @@ async function loadFiles(e) {
           {renderCompare() || <div style={{textAlign:'center',padding:'2rem',color:'#aaa',fontSize:13,background:'#f8f8f7',borderRadius:8}}>Selecciona dos auditorías para comparar.</div>}
         </div>
       )}
+{/* PAYWALL */}
+      {showPaywall && (
+        <div style={{position:'fixed',top:0,left:0,width:'100%',height:'100%',background:'rgba(0,0,0,0.5)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+          <div style={{background:'#fff',borderRadius:16,padding:32,maxWidth:600,width:'100%',textAlign:'center'}}>
+            <div style={{fontSize:32,marginBottom:8}}>🚀</div>
+            <h2 style={{fontSize:22,fontWeight:700,marginBottom:8,letterSpacing:'-0.5px'}}>Has usado tus 3 auditorías gratuitas</h2>
+            <p style={{fontSize:14,color:'#888',marginBottom:32}}>Elige un plan para seguir auditando tu código</p>
 
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:24}}>
+              {/* Plan Free */}
+              <div style={{border:'0.5px solid #e5e5e5',borderRadius:12,padding:20,textAlign:'left'}}>
+                <div style={{fontSize:12,fontWeight:500,color:'#888',textTransform:'uppercase',letterSpacing:.5,marginBottom:8}}>Free</div>
+                <div style={{fontSize:28,fontWeight:700,marginBottom:4}}>$0</div>
+                <div style={{fontSize:12,color:'#aaa',marginBottom:16}}>para siempre</div>
+                <div style={{fontSize:13,color:'#555',lineHeight:1.8}}>
+                  ✓ 3 auditorías totales<br/>
+                  ✓ Archivos individuales<br/>
+                  ✓ Historial básico<br/>
+                  ✗ Proyectos completos<br/>
+                  ✗ GitHub integration<br/>
+                </div>
+                <button style={{width:'100%',marginTop:16,padding:'8px 0',borderRadius:8,border:'0.5px solid #ddd',background:'transparent',fontSize:13,cursor:'pointer',color:'#888'}} onClick={()=>setShowPaywall(false)}>
+                  Plan actual
+                </button>
+              </div>
+
+              {/* Plan Pro */}
+              <div style={{border:'2px solid #1a1a1a',borderRadius:12,padding:20,textAlign:'left',position:'relative'}}>
+                <div style={{position:'absolute',top:-10,left:'50%',transform:'translateX(-50%)',background:'#1a1a1a',color:'#fff',fontSize:10,padding:'3px 10px',borderRadius:10,whiteSpace:'nowrap'}}>MÁS POPULAR</div>
+                <div style={{fontSize:12,fontWeight:500,color:'#888',textTransform:'uppercase',letterSpacing:.5,marginBottom:8}}>Pro</div>
+                <div style={{fontSize:28,fontWeight:700,marginBottom:4}}>$9<span style={{fontSize:14,fontWeight:400,color:'#888'}}>/mes</span></div>
+                <div style={{fontSize:12,color:'#aaa',marginBottom:16}}>facturación mensual</div>
+                <div style={{fontSize:13,color:'#555',lineHeight:1.8}}>
+                  ✓ Auditorías ilimitadas<br/>
+                  ✓ Proyectos completos<br/>
+                  ✓ GitHub integration<br/>
+                  ✓ Historial completo<br/>
+                  ✓ Exportar PDF<br/>
+                </div>
+                <button style={{width:'100%',marginTop:16,padding:'8px 0',borderRadius:8,border:'none',background:'#1a1a1a',color:'#fff',fontSize:13,cursor:'pointer',fontWeight:500}}>
+                  Empezar Pro →
+                </button>
+              </div>
+
+              {/* Plan Team */}
+              <div style={{border:'0.5px solid #e5e5e5',borderRadius:12,padding:20,textAlign:'left'}}>
+                <div style={{fontSize:12,fontWeight:500,color:'#888',textTransform:'uppercase',letterSpacing:.5,marginBottom:8}}>Team</div>
+                <div style={{fontSize:28,fontWeight:700,marginBottom:4}}>$29<span style={{fontSize:14,fontWeight:400,color:'#888'}}>/mes</span></div>
+                <div style={{fontSize:12,color:'#aaa',marginBottom:16}}>hasta 5 usuarios</div>
+                <div style={{fontSize:13,color:'#555',lineHeight:1.8}}>
+                  ✓ Todo lo de Pro<br/>
+                  ✓ 5 miembros de equipo<br/>
+                  ✓ Dashboard compartido<br/>
+                  ✓ Auditorías en equipo<br/>
+                  ✓ Soporte prioritario<br/>
+                </div>
+                <button style={{width:'100%',marginTop:16,padding:'8px 0',borderRadius:8,border:'0.5px solid #1a1a1a',background:'transparent',fontSize:13,cursor:'pointer',fontWeight:500}}>
+                  Empezar Team →
+                </button>
+              </div>
+            </div>
+
+            <button style={{fontSize:13,color:'#aaa',background:'transparent',border:'none',cursor:'pointer'}} onClick={()=>setShowPaywall(false)}>
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </div>
   )
