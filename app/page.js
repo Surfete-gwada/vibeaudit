@@ -1,6 +1,7 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
 import { useUser } from '@clerk/nextjs'
+import { processFiles, loadFromGitHub } from '../lib/fileLoader'
 
 export default function Home() {
   const [code, setCode] = useState('')
@@ -23,7 +24,14 @@ export default function Home() {
   const [cmpB, setCmpB] = useState('')
   const { user } = useUser()
   const [fileName, setFileName] = useState('')
+  const [fileCount, setFileCount] = useState(0)
+  const [redactedCount, setRedactedCount] = useState(0)
+  const [skippedCount, setSkippedCount] = useState(0)
+  const [githubUrl, setGithubUrl] = useState('')
+  const [loadingGithub, setLoadingGithub] = useState(false)
+  const [uploadMode, setUploadMode] = useState('text') // text | files | folder | github
   const fileRef = useRef()
+  const folderRef = useRef()
   const intervalRef = useRef()
 
   const loadMsgs = ['Analizando código...','Detectando vulnerabilidades...','Evaluando arquitectura...','Buscando anti-patrones...','Generando recomendaciones...']
@@ -67,19 +75,54 @@ export default function Home() {
     setLoading(false)
   }
 
-  function loadFile(e) {
-    const f = e.target.files[0]
-    if (!f) return
-    if (f.size > 512000) { setError('Archivo muy grande. Máximo 500KB.'); return }
-    const r = new FileReader()
-    r.onload = ev => {
-      setCode(ev.target.result)
-      setFileName(f.name)
-      const ext = f.name.split('.').pop().toLowerCase()
-      const map = { js:'javascript', ts:'typescript', py:'python', jsx:'react', tsx:'react', sql:'sql' }
-      if (map[ext]) setLang(map[ext])
+async function loadFiles(e) {
+    const files = Array.from(e.target.files)
+    if (!files.length) return
+    setError('')
+    try {
+      const result = await processFiles(files)
+      setCode(result.combined)
+      setFileName(`${result.fileCount} archivo${result.fileCount>1?'s':''}`)
+      setFileCount(result.fileCount)
+      setRedactedCount(result.totalRedacted)
+      setSkippedCount(result.skippedCount)
+    } catch {
+      setError('Error al procesar los archivos.')
     }
-    r.readAsText(f)
+  }
+
+  async function loadFolder(e) {
+    const files = Array.from(e.target.files)
+    if (!files.length) return
+    setError('')
+    try {
+      const result = await processFiles(files)
+      setCode(result.combined)
+      setFileName(`carpeta · ${result.fileCount} archivos`)
+      setFileCount(result.fileCount)
+      setRedactedCount(result.totalRedacted)
+      setSkippedCount(result.skippedCount)
+    } catch {
+      setError('Error al procesar la carpeta.')
+    }
+  }
+
+  async function loadGitHub() {
+    if (!githubUrl.trim()) return
+    setLoadingGithub(true)
+    setError('')
+    try {
+      const result = await loadFromGitHub(githubUrl)
+      setCode(result.combined)
+      setFileName(`github · ${result.repoName} · ${result.fileCount} archivos`)
+      setFileCount(result.fileCount)
+      setRedactedCount(result.totalRedacted)
+      setSkippedCount(result.skippedCount)
+      setLang('javascript')
+    } catch(e) {
+      setError(e.message || 'Error al cargar el repositorio.')
+    }
+    setLoadingGithub(false)
   }
 
   function resetAudit() {
@@ -225,12 +268,62 @@ export default function Home() {
 
           {!result && (
             <>
-              <div style={s.uploadZone} onClick={()=>fileRef.current.click()}>
-                <div style={{fontSize:14,fontWeight:500,marginBottom:4}}>Arrastra un archivo o haz clic para subir</div>
-                <div style={{fontSize:12,color:'#aaa',fontFamily:'monospace'}}>.js .ts .py .jsx .tsx .sql — máx 500KB</div>
-                {fileName && <div style={{fontSize:12,marginTop:8,color:'#3B6D11'}}>📄 {fileName}</div>}
+{/* Selector de modo */}
+              <div style={{display:'flex',gap:4,marginBottom:12}}>
+                {[['text','✏️ Pegar código'],['files','📄 Archivos'],['folder','📁 Carpeta'],['github','🐙 GitHub']].map(([mode,label])=>(
+                  <button key={mode} onClick={()=>{setUploadMode(mode);setCode('');setFileName('');setFileCount(0);setRedactedCount(0)}}
+                    style={{...uploadMode===mode?s.focusBtnActive:s.focusBtn, fontSize:12, padding:'5px 10px'}}>
+                    {label}
+                  </button>
+                ))}
               </div>
-              <input ref={fileRef} type="file" style={{display:'none'}} accept=".js,.ts,.py,.jsx,.tsx,.sql,.go,.rs" onChange={loadFile}/>
+
+              {/* Modo archivos múltiples */}
+              {uploadMode==='files' && (
+                <div style={s.uploadZone} onClick={()=>fileRef.current.click()}>
+                  <div style={{fontSize:14,fontWeight:500,marginBottom:4}}>Selecciona uno o varios archivos</div>
+                  <div style={{fontSize:12,color:'#aaa',fontFamily:'monospace'}}>.js .ts .py .jsx .tsx .sql .go .rs</div>
+                  {fileName && <div style={{fontSize:12,marginTop:8,color:'#3B6D11'}}>📄 {fileName}</div>}
+                </div>
+              )}
+              <input ref={fileRef} type="file" style={{display:'none'}} multiple accept=".js,.ts,.py,.jsx,.tsx,.sql,.go,.rs,.php,.rb,.java,.cs,.swift,.kt" onChange={loadFiles}/>
+
+              {/* Modo carpeta */}
+              {uploadMode==='folder' && (
+                <div style={s.uploadZone} onClick={()=>folderRef.current.click()}>
+                  <div style={{fontSize:14,fontWeight:500,marginBottom:4}}>Selecciona una carpeta de proyecto</div>
+                  <div style={{fontSize:12,color:'#aaa',fontFamily:'monospace'}}>Se excluyen node_modules, .git, .env y archivos sensibles</div>
+                  {fileName && <div style={{fontSize:12,marginTop:8,color:'#3B6D11'}}>📁 {fileName}</div>}
+                </div>
+              )}
+              <input ref={folderRef} type="file" style={{display:'none'}} webkitdirectory="" onChange={loadFolder}/>
+
+              {/* Modo GitHub */}
+              {uploadMode==='github' && (
+                <div style={{marginBottom:16}}>
+                  <div style={{display:'flex',gap:8}}>
+                    <input
+                      type="text"
+                      value={githubUrl}
+                      onChange={e=>setGithubUrl(e.target.value)}
+                      placeholder="https://github.com/usuario/repositorio"
+                      style={{flex:1,padding:'10px 12px',borderRadius:8,border:'0.5px solid #ddd',fontSize:13,fontFamily:'monospace',outline:'none'}}
+                    />
+                    <button onClick={loadGitHub} disabled={loadingGithub||!githubUrl.trim()} style={{...s.btnPrimary,opacity:loadingGithub||!githubUrl.trim()?0.4:1}}>
+                      {loadingGithub ? 'Cargando...' : 'Cargar'}
+                    </button>
+                  </div>
+                  <div style={{fontSize:11,color:'#aaa',marginTop:6}}>Solo repositorios públicos. Se excluyen automáticamente archivos sensibles.</div>
+                  {fileName && <div style={{fontSize:12,marginTop:8,color:'#3B6D11'}}>🐙 {fileName}</div>}
+                </div>
+              )}
+
+              {/* Resumen de seguridad */}
+              {(redactedCount > 0 || skippedCount > 0) && (
+                <div style={{padding:'10px 14px',background:'#EAF3DE',borderRadius:8,fontSize:12,color:'#3B6D11',marginBottom:12}}>
+                  🛡️ Protección activa — {redactedCount > 0 ? `${redactedCount} dato${redactedCount>1?'s':''} sensible${redactedCount>1?'s':''} eliminado${redactedCount>1?'s':''}` : ''}{redactedCount>0&&skippedCount>0?' · ':''}{skippedCount > 0 ? `${skippedCount} archivo${skippedCount>1?'s':''} excluido${skippedCount>1?'s':''}` : ''}
+                </div>
+              )}
 
               <div style={s.panel}>
                 <div style={s.toolbar}>
