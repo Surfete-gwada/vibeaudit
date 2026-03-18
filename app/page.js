@@ -1,5 +1,6 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
+import { useUser } from '@clerk/nextjs'
 
 export default function Home() {
   const [code, setCode] = useState('')
@@ -20,6 +21,7 @@ export default function Home() {
   const [page, setPage] = useState('audit')
   const [cmpA, setCmpA] = useState('')
   const [cmpB, setCmpB] = useState('')
+  const { user } = useUser()
   const [fileName, setFileName] = useState('')
   const fileRef = useRef()
   const intervalRef = useRef()
@@ -51,7 +53,7 @@ export default function Home() {
       const res = await fetch('/api/audit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, lang, focus })
+        body: JSON.stringify({ code, lang, focus, userId: user?.id })
       })
       const data = await res.json()
       clearInterval(intervalRef.current)

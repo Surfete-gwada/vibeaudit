@@ -1,5 +1,7 @@
+import { supabaseAdmin } from '../../../lib/supabase'
+
 export async function POST(request) {
-  const { code, lang, focus } = await request.json()
+  const { code, lang, focus, userId } = await request.json()
 
   if (!code || code.trim().length < 10) {
     return Response.json({ error: 'Código demasiado corto' }, { status: 400 })
@@ -35,9 +37,25 @@ Solo JSON puro, sin markdown.`,
   })
 
   const data = await response.json()
-  console.log('Respuesta Anthropic:', JSON.stringify(data))
   const text = data.content.map(b => b.text || '').join('')
   const clean = text.replace(/```json|```/g, '').trim()
+  const result = JSON.parse(clean)
 
-  return Response.json(JSON.parse(clean))
+  // Guardar en Supabase si hay usuario logueado
+  console.log('userId recibido:', userId)
+if (userId) {
+    const { error: dbError } = await supabaseAdmin.from('audits').insert({
+      user_id: userId,
+      lang,
+      focus,
+      scores: result.scores,
+      findings: result.findings,
+      summary: result.summary,
+      code_snippet: code.substring(0, 300)
+    })
+    console.log('Error Supabase:', dbError)
+  }
+  
+
+  return Response.json(result)
 }
